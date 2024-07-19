@@ -1,0 +1,81 @@
+#version 450
+
+layout(local_size_x = 16) in;
+
+struct Grass {
+    vec3 position;
+    float tilt;
+    vec2 facing;
+    float size;
+    float bend;
+};
+
+layout(set = 0, binding = 0, std430) buffer GrassBuffer {
+    Grass grasses[];
+};
+
+layout(push_constant) uniform constants {
+    mat4 transform;
+    vec3 min_pos;
+    float distance_between;
+    vec3 max_pos;
+    vec3 camera_pos;
+    vec3 camera_front;
+};
+
+float random(inout uint seed) {
+    seed ^= seed << 23197;
+    seed ^= seed >> 94849;
+    seed ^= seed << 16091;
+    return float(seed % 10000) / 10000.0;
+}
+
+float random_range(inout uint seed, float min, float max) {
+    return min + (max - min) * random(seed);
+}
+
+const float PI = 3.14159;
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+
+    // Generate a seed based on the index
+    uint seed = index + 1;
+
+    const float grass_count_x = (max_pos.x - min_pos.x) / distance_between;
+    const float grass_count_z = (max_pos.z - min_pos.z) / distance_between;
+
+    if (index > grass_count_x * grass_count_z) {
+        return;
+    }
+
+    uint row_index = uint(floor(index / grass_count_x));
+    uint column_index = uint(index - (grass_count_z * row_index));
+
+    float x = min_pos.x + column_index * distance_between;
+    float z = min_pos.z + row_index * distance_between;
+
+    vec3 grass_position = vec3(x, 0.0, z);
+    vec3 grass_position_world = (transform * vec4(grass_position, 1.0)).xyz;
+
+    vec3 camera_vector = camera_pos - grass_position_world;
+
+    // do not add if out of view
+    if (dot(camera_vector, camera_front) < 0.0) {
+        //return;
+    }
+
+    Grass grass;
+    grass.position = grass_position;
+    grass.tilt = random_range(seed, -2 * PI, 2 * PI);
+    grass.facing = vec2(
+            random_range(seed, -1.0, 1.0),
+            random_range(seed, -1.0, 1.0)
+        );
+    grass.size = random_range(seed, 0.5, 1.0);
+    grass.bend = random_range(seed, 0.5, 1.0);
+
+    bool use_lod = false;
+
+    grasses[index] = grass;
+}
